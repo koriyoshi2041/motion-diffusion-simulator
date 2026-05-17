@@ -35,10 +35,10 @@ const SMPL22_KINEMATIC_CHAIN = [
 
 // ──────────────────────────────────────────────────────────────────────
 // 默认 server endpoint —— 直接打集群（aTrust VPN 走通后浏览器可直连）
-//   优先级：URL ?api=... > window.HY_API > 集群 172.16.1.48:8888
-//   想用本机 mock 时显式 ?api=http://localhost:8888/api/generate
+//   优先级：URL ?api=... > window.HY_API > 集群 172.16.1.48:8889 (Full)
+//   :8889 = HY-Motion-1.0 Full (1B)；:8888 = HY-Motion-1.0-Lite (0.46B)
 // ──────────────────────────────────────────────────────────────────────
-const CLUSTER_ENDPOINT = "http://172.16.1.48:8888/api/generate";
+const CLUSTER_ENDPOINT = "http://172.16.1.48:8889/api/generate";
 
 function _resolveEndpoint() {
   try {
@@ -127,7 +127,7 @@ async function fetchAction(prompt, opts = {}) {
       duration: (d.joints.length / d.fps) * 1000,
       log: [
         `endpoint=${endpoint.replace(/^https?:\/\//, "")}`,
-        `model=HY-Motion-1.0-Lite`,
+        `model=HY-Motion-1.0-Full`,
         `frames=${d.joints.length}`,
         `fps=${d.fps}`,
         `infer=${(d.inference_seconds || 0).toFixed(2)}s`,
