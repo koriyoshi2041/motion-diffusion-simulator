@@ -1,21 +1,18 @@
 // ────────────────────────────────────────────────────────────────────────
-// stage.jsx —— 3D 舞台 + SVG 22-joint 真骨架渲染
+// stage.jsx —— 3D 舞台 + 4 种 viz 切换 (stickfigure / jointmap / topdown / energy)
 //
 // 输入：props.action = {
-//   name, frames: number[T][22][3],  // 来自 HY-Motion 真模型
+//   name, frames: number[T][22][3],
 //   fps, kinematic_chain, duration (ms),
 //   inference_seconds, prompt,
 // }
 //
-// 工作流：
-//   • 在 requestAnimationFrame 里维护当前帧索引 idx；
-//   • 每收到新 action 重置 idx=0 并按 fps 推进；
-//   • 把 22 个 3D 关节通过简单透视投影到 2D，
-//     再用 SVG <polyline> 沿 kinematic_chain 画 5 条骨架线 + 22 个圆点。
-//   • 保留原 demo 的"舞台外壳": 地板网格 + 太阳 + 坐标轴 + scanlines + REC 角标。
-//
-// 这一文件**完全替换**了原 CSS-3D puppet（没有那么多 limb/elbow 节点的 CSS），
-// 但保留了舞台的视觉壳子和注释手感。
+// 四种 viz：
+//   • stickfigure: 3D 骨架按 fps 实时播放 (raf 推进 frameIdx)
+//   • jointmap:    22 joint × T 帧的速度模长热图（一次性算）
+//   • topdown:     root 关节 (x, z) 俯视轨迹 + 起止点
+//   • energy:      每帧总动能曲线
+// 用户通过舞台顶部 tab 切换；状态保存在 stageMode。
 // ────────────────────────────────────────────────────────────────────────
 
 
@@ -117,9 +114,161 @@ function SkeletonSvg({ joints2d, width, height }) {
 
 
 // ──────────────────────────────────────────────────────────────────────
+// 关节运动强度热图 (jointmap): 22 joint × T-1 帧
+// ──────────────────────────────────────────────────────────────────────
+function JointHeatmap({ frames, width, height }) {
+  if (!frames || frames.length < 2) return null;
+  const T = frames.length - 1, J = 22;
+  // 速度模长 vel[t][j] = |frame[t+1] - frame[t]|_xyz
+  const vel = new Array(T);
+  let maxV = 1e-6;
+  for (let t = 0; t < T; t++) {
+    vel[t] = new Array(J);
+    for (let j = 0; j < J; j++) {
+      const dx = frames[t+1][j][0] - frames[t][j][0];
+      const dy = frames[t+1][j][1] - frames[t][j][1];
+      const dz = frames[t+1][j][2] - frames[t][j][2];
+      const v = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      vel[t][j] = v;
+      if (v > maxV) maxV = v;
+    }
+  }
+  const padL = 36, padR = 8, padT = 10, padB = 24;
+  const W = width - padL - padR, H = height - padT - padB;
+  const cellW = W / T, cellH = H / J;
+  const cells = [];
+  for (let t = 0; t < T; t++) {
+    for (let j = 0; j < J; j++) {
+      const v = vel[t][j] / maxV;
+      // viridis-ish: dark blue -> green -> yellow
+      const r = Math.round(255 * Math.min(1, Math.max(0, v*2 - 0.5)));
+      const g = Math.round(255 * Math.min(1, v*1.5));
+      const b = Math.round(255 * Math.max(0, 0.4 - v*0.4));
+      cells.push(<rect key={`${t}-${j}`}
+                      x={padL + t*cellW} y={padT + j*cellH}
+                      width={cellW + 0.5} height={cellH + 0.5}
+                      fill={`rgb(${r},${g},${b})`}/>);
+    }
+  }
+  // axis labels
+  const yTicks = [];
+  for (let j = 0; j <= 21; j += 7) {
+    yTicks.push(<text key={`y${j}`} x={padL - 6} y={padT + j*cellH + 4}
+                      fill="#9aa5b1" fontSize="9" textAnchor="end" fontFamily="JetBrains Mono">{j}</text>);
+  }
+  return (
+    <svg width={width} height={height} style={{position: "absolute", inset: 0}}>
+      {cells}
+      {yTicks}
+      <text x={padL/2} y={height/2} fill="#6da3d6" fontSize="10"
+            transform={`rotate(-90 ${padL/2} ${height/2})`} textAnchor="middle">joint id</text>
+      <text x={padL + W/2} y={height - 6} fill="#6da3d6" fontSize="10" textAnchor="middle">frame</text>
+    </svg>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
+// 俯视轨迹 (topdown): root 关节 (x, z) 路径
+// ──────────────────────────────────────────────────────────────────────
+function TopdownTrajectory({ frames, width, height, currentIdx }) {
+  if (!frames || frames.length < 2) return null;
+  const T = frames.length;
+  // 取 root (joint 0) 的 x, z
+  const pts = frames.map(f => [f[0][0], f[0][2]]);
+  const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
+  let xmin = Math.min(...xs), xmax = Math.max(...xs);
+  let zmin = Math.min(...zs), zmax = Math.max(...zs);
+  if (xmax - xmin < 0.5) { const c = (xmin+xmax)/2; xmin = c - 0.25; xmax = c + 0.25; }
+  if (zmax - zmin < 0.5) { const c = (zmin+zmax)/2; zmin = c - 0.25; zmax = c + 0.25; }
+  const pad = 30;
+  const scale = Math.min((width - 2*pad) / (xmax - xmin), (height - 2*pad) / (zmax - zmin));
+  const cx = width/2, cy = height/2;
+  const project = ([x, z]) => [cx + (x - (xmin+xmax)/2) * scale,
+                               cy + (z - (zmin+zmax)/2) * scale];
+  const path2d = pts.map(p => project(p)).map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const start = project(pts[0]), end = project(pts[T-1]);
+  const curr = currentIdx != null ? project(pts[Math.min(currentIdx, T-1)]) : null;
+  return (
+    <svg width={width} height={height} style={{position: "absolute", inset: 0}}>
+      {/* grid */}
+      <defs>
+        <pattern id="topdown-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(43,108,176,.18)" strokeWidth="0.5"/>
+        </pattern>
+      </defs>
+      <rect width={width} height={height} fill="url(#topdown-grid)"/>
+      {/* trajectory */}
+      <polyline points={path2d} fill="none" stroke="#6da3d6" strokeWidth="2"/>
+      {/* start (green) and end (red) markers */}
+      <circle cx={start[0]} cy={start[1]} r="6" fill="#16a34a" stroke="#000" strokeWidth="1.5"/>
+      <text x={start[0]+10} y={start[1]+4} fill="#16a34a" fontSize="11" fontFamily="Kalam, cursive">start</text>
+      <circle cx={end[0]} cy={end[1]} r="6" fill="#c0392b" stroke="#000" strokeWidth="1.5"/>
+      <text x={end[0]+10} y={end[1]+4} fill="#c0392b" fontSize="11" fontFamily="Kalam, cursive">end</text>
+      {/* current frame marker (animated) */}
+      {curr && <circle cx={curr[0]} cy={curr[1]} r="4" fill="#fff8d8" stroke="#000" strokeWidth="1.2"/>}
+      <text x={pad} y={pad - 6} fill="#9aa5b1" fontSize="10" fontFamily="JetBrains Mono">
+        top-down · root (x, z) · {T} frames
+      </text>
+    </svg>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
+// 能量曲线 (energy): 每帧总动能
+// ──────────────────────────────────────────────────────────────────────
+function EnergyCurve({ frames, width, height, currentIdx }) {
+  if (!frames || frames.length < 2) return null;
+  const T = frames.length - 1;
+  const energy = new Array(T);
+  let maxE = 1e-6;
+  for (let t = 0; t < T; t++) {
+    let e = 0;
+    for (let j = 0; j < 22; j++) {
+      const dx = frames[t+1][j][0] - frames[t][j][0];
+      const dy = frames[t+1][j][1] - frames[t][j][1];
+      const dz = frames[t+1][j][2] - frames[t][j][2];
+      e += dx*dx + dy*dy + dz*dz;
+    }
+    energy[t] = e;
+    if (e > maxE) maxE = e;
+  }
+  const padL = 36, padR = 12, padT = 22, padB = 28;
+  const W = width - padL - padR, H = height - padT - padB;
+  const xAt = (t) => padL + (t / (T - 1)) * W;
+  const yAt = (e) => padT + H - (e / maxE) * H;
+  let path = `M ${xAt(0)} ${padT + H} `;
+  for (let t = 0; t < T; t++) path += `L ${xAt(t).toFixed(1)} ${yAt(energy[t]).toFixed(1)} `;
+  path += `L ${xAt(T-1)} ${padT + H} Z`;
+  let line = `M ${xAt(0)} ${yAt(energy[0]).toFixed(1)} `;
+  for (let t = 1; t < T; t++) line += `L ${xAt(t).toFixed(1)} ${yAt(energy[t]).toFixed(1)} `;
+  // current
+  const cur = currentIdx != null && currentIdx > 0
+    ? [xAt(Math.min(currentIdx-1, T-1)), yAt(energy[Math.min(currentIdx-1, T-1)])] : null;
+  return (
+    <svg width={width} height={height} style={{position: "absolute", inset: 0}}>
+      <path d={path} fill="rgba(217,119,6,0.25)"/>
+      <path d={line} fill="none" stroke="#d97706" strokeWidth="2"/>
+      {cur && <circle cx={cur[0]} cy={cur[1]} r="4" fill="#fff8d8" stroke="#d97706" strokeWidth="1.5"/>}
+      {/* axes */}
+      <line x1={padL} y1={padT + H} x2={padL + W} y2={padT + H} stroke="#9aa5b1" strokeWidth="0.6"/>
+      <line x1={padL} y1={padT} x2={padL} y2={padT + H} stroke="#9aa5b1" strokeWidth="0.6"/>
+      <text x={padL + W/2} y={height - 8} fill="#6da3d6" fontSize="10" textAnchor="middle" fontFamily="JetBrains Mono">frame</text>
+      <text x={padL/2 - 4} y={padT + H/2} fill="#6da3d6" fontSize="9" textAnchor="middle"
+            transform={`rotate(-90 ${padL/2 - 4} ${padT + H/2})`} fontFamily="JetBrains Mono">Σ‖Δj‖²</text>
+      <text x={padL + 4} y={padT - 6} fill="#d97706" fontSize="11" fontFamily="Kalam, cursive">kinetic energy</text>
+    </svg>
+  );
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
 // 主舞台组件
 // ──────────────────────────────────────────────────────────────────────
 function Stage({ action, prompt, transmitting }) {
+  // viz 切换：stickfigure / jointmap / topdown / energy
+  const [stageMode, setStageMode] = React.useState("stickfigure");
   // 当前播放到第几帧
   const [frameIdx, setFrameIdx] = React.useState(0);
   // 用 ref 存最新 action，避免 raf 闭包引用旧值
@@ -182,33 +331,69 @@ function Stage({ action, prompt, transmitting }) {
     });
   }
 
+  // 4 种 viz tab 数据
+  const TABS = [
+    {key: "stickfigure", label: "skeleton",  hint: "3D pose"},
+    {key: "jointmap",    label: "heat-map",  hint: "joint × time"},
+    {key: "topdown",     label: "top-down",  hint: "root trajectory"},
+    {key: "energy",      label: "energy",    hint: "kinetic curve"},
+  ];
+
+  // 「黑屏舞台」只有 stickfigure 模式才需要；其他三种用白底配色更清晰
+  const isSkeleton = stageMode === "stickfigure";
+
   return (
     <div className="stage-wrap">
       <div className="stage-tag annot">↓ render target</div>
-      <div className="stage scribble-border" ref={stageRef}>
-        <div className="stage-bg">
-          {/* 地板网格 */}
-          <div className="grid-floor"></div>
-          <div className="grid-back"></div>
-          {/* 太阳 */}
-          <div className="sun"></div>
-          {/* 坐标轴 */}
-          <svg className="axes" viewBox="0 0 100 60">
-            <g stroke="#c0392b" strokeWidth=".6" fill="none">
-              <line x1="6" y1="50" x2="6" y2="20"/>
-              <line x1="6" y1="50" x2="36" y2="50"/>
-              <line x1="6" y1="50" x2="22" y2="40"/>
-              <text x="2" y="18" fontSize="5" fill="#c0392b" fontFamily="JetBrains Mono">y</text>
-              <text x="38" y="52" fontSize="5" fill="#c0392b" fontFamily="JetBrains Mono">x</text>
-              <text x="22" y="38" fontSize="5" fill="#c0392b" fontFamily="JetBrains Mono">z</text>
-            </g>
-          </svg>
-          <div className="scanlines"></div>
-          <div className="vignette"></div>
 
-          {/* 真骨架 SVG */}
-          {joints2d && (
+      {/* viz 切换 tab —— 沿用蓝图便利贴风格 */}
+      <div className="viz-tabs">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            className={`viz-tab ${stageMode === t.key ? "active" : ""}`}
+            onClick={() => setStageMode(t.key)}
+            title={t.hint}
+          >
+            <span className="viz-tab-label">{t.label}</span>
+            <span className="viz-tab-hint">{t.hint}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className={`stage scribble-border ${isSkeleton ? "" : "stage-light"}`} ref={stageRef}>
+        <div className="stage-bg" style={isSkeleton ? {} : {background: "#faf3df"}}>
+          {/* 仅 skeleton 模式显示舞台外壳（地板/太阳/坐标轴/扫描线） */}
+          {isSkeleton && <>
+            <div className="grid-floor"></div>
+            <div className="grid-back"></div>
+            <div className="sun"></div>
+            <svg className="axes" viewBox="0 0 100 60">
+              <g stroke="#c0392b" strokeWidth=".6" fill="none">
+                <line x1="6" y1="50" x2="6" y2="20"/>
+                <line x1="6" y1="50" x2="36" y2="50"/>
+                <line x1="6" y1="50" x2="22" y2="40"/>
+                <text x="2" y="18" fontSize="5" fill="#c0392b" fontFamily="JetBrains Mono">y</text>
+                <text x="38" y="52" fontSize="5" fill="#c0392b" fontFamily="JetBrains Mono">x</text>
+                <text x="22" y="38" fontSize="5" fill="#c0392b" fontFamily="JetBrains Mono">z</text>
+              </g>
+            </svg>
+            <div className="scanlines"></div>
+            <div className="vignette"></div>
+          </>}
+
+          {/* 4 种 viz 之一 */}
+          {stageMode === "stickfigure" && joints2d && (
             <SkeletonSvg joints2d={joints2d} width={stageSize.w} height={stageSize.h}/>
+          )}
+          {stageMode === "jointmap" && action?.frames && (
+            <JointHeatmap frames={action.frames} width={stageSize.w} height={stageSize.h}/>
+          )}
+          {stageMode === "topdown" && action?.frames && (
+            <TopdownTrajectory frames={action.frames} width={stageSize.w} height={stageSize.h} currentIdx={frameIdx}/>
+          )}
+          {stageMode === "energy" && action?.frames && (
+            <EnergyCurve frames={action.frames} width={stageSize.w} height={stageSize.h} currentIdx={frameIdx}/>
           )}
 
           {/* 角标 */}
@@ -250,6 +435,43 @@ function Stage({ action, prompt, transmitting }) {
 
       <style>{`
         .stage-wrap { position: relative; margin-bottom: 16px; }
+        .viz-tabs {
+          position: absolute; top: -42px; right: 8px;
+          display: flex; gap: 6px; z-index: 5;
+        }
+        .viz-tab {
+          font-family: "Kalam", cursive;
+          background: #fff7a8;
+          color: #1d1a14;
+          border: 2px solid #1d1a14;
+          border-radius: 6px 8px 5px 7px;
+          padding: 4px 10px 5px;
+          cursor: pointer;
+          transition: transform .12s, background .15s, box-shadow .12s;
+          box-shadow: 1.5px 2px 0 rgba(29,26,20,.4);
+          transform: rotate(-1deg);
+          line-height: 1.05;
+          min-width: 70px;
+        }
+        .viz-tab:nth-child(2) { transform: rotate(1deg); background: #ffe6b3; }
+        .viz-tab:nth-child(3) { transform: rotate(-1.5deg); background: #dbe9ff; }
+        .viz-tab:nth-child(4) { transform: rotate(0.8deg); background: #d8f0c9; }
+        .viz-tab:hover { transform: rotate(0) translateY(-1px); box-shadow: 2.5px 4px 0 rgba(29,26,20,.5); }
+        .viz-tab.active {
+          background: #1d4d8a;
+          color: #fff8d8;
+          box-shadow: inset 0 0 0 2px rgba(255,255,255,.18), 1.5px 2px 0 rgba(29,26,20,.55);
+        }
+        .viz-tab-label {
+          display: block;
+          font-size: 14px; font-weight: 700;
+        }
+        .viz-tab-hint {
+          display: block;
+          font-family: "JetBrains Mono", monospace;
+          font-size: 8px; opacity: .65;
+          margin-top: 1px;
+        }
         .stage-tag {
           position: absolute;
           top: -34px; left: 24px;

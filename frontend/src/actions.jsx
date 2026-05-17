@@ -34,9 +34,23 @@ const SMPL22_KINEMATIC_CHAIN = [
 
 
 // ──────────────────────────────────────────────────────────────────────
-// 默认 server endpoint（可在 UI 里通过 window.HY_API 覆盖）
+// 默认 server endpoint
+//   优先级：URL ?api=... > window.HY_API > 本机 mock backend > 集群
 // ──────────────────────────────────────────────────────────────────────
-const DEFAULT_ENDPOINT = window.HY_API || "http://172.16.1.48:8888/api/generate";
+function _resolveEndpoint() {
+  try {
+    const urlApi = new URLSearchParams(window.location.search).get("api");
+    if (urlApi) return urlApi;
+  } catch (e) {}
+  if (window.HY_API) return window.HY_API;
+  // local mock 优先 → 同主机 8888；若访问 file:// 也回退到 localhost
+  const host = window.location.hostname || "localhost";
+  if (host === "localhost" || host === "127.0.0.1" || host === "") {
+    return "http://localhost:8888/api/generate";
+  }
+  return `http://${host}:8888/api/generate`;
+}
+const DEFAULT_ENDPOINT = _resolveEndpoint();
 
 
 // ──────────────────────────────────────────────────────────────────────
