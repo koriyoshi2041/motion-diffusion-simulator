@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>HY-Motion API 测试</title>
+<style>
+  body { font-family: -apple-system, sans-serif; padding: 24px; max-width: 900px; margin: 0 auto; }
+  textarea, input { width: 100%; box-sizing: border-box; padding: 8px; font-size: 14px; margin: 4px 0 12px; }
+  button { padding: 10px 18px; background: #1d4d8a; color: white; border: 0; border-radius: 4px; cursor: pointer; }
+  button:disabled { background: #888; }
+  pre { background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; max-height: 280px; }
+  svg { background: #1a1a1a; border-radius: 6px; }
+  .row { display: flex; gap: 12px; align-items: center; }
+  .row > * { flex: 1; }
+  .meta { font-size: 12px; color: #666; }
+</style>
+</head>
+<body>
+<h1>HY-Motion API 测试页 <small>—— 跳过手绘风格 demo，直接打 server</small></h1>
+
+<p>调试用：直接 POST 一个 prompt 到 <code id="ep"></code> 看返回 (T, 22, 3) 骨架的播放效果。</p>
+
+<label>Endpoint:</label>
+<input id="endpoint" value="http://172.16.1.48:8888/api/generate">
+
+<label>Prompt（英文最稳）:</label>
+<textarea id="prompt" rows="2">a person performs three consecutive push-ups</textarea>
+
+<div class="row">
+  <div>
+    <label>Duration (s):</label>
+    <input id="duration" type="number" value="4.0" step="0.5" min="1" max="10">
+  </div>
+  <div>
+    <label>CFG scale:</label>
+    <input id="cfg" type="number" value="5.0" step="0.5" min="1" max="12">
+  </div>
+  <div>
+    <label>Seed:</label>
+    <input id="seed" type="number" value="0">
+  </div>
+</div>
+
+<button id="go">Generate</button>
+<span id="status" class="meta"></span>
+
+<h3>骨架预览</h3>
+<svg id="canvas" width="900" height="420" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<h3>原始返回 (前 200 字符)</h3>
+<pre id="raw"></pre>
+
+<script>
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CHAINS = [
+  [0, 2, 5, 8, 11], [0, 1, 4, 7, 10],
+  [0, 3, 6, 9, 12, 15], [9, 14, 17, 19, 21], [9, 13, 16, 18, 20],
+];
+const COLORS = ["#c0392b", "#d97706", "#3498db", "#9b59b6", "#1abc9c"];
+
+const $ = (id) => document.getElementById(id);
+$("ep").textContent = $("endpoint").value;
+let currentFrames = null, currentFps = 30, frameIdx = 0;
+
+function project(frame, w, h) {
+  const allY = frame.map(p => p[1]);
+  const yMin = Math.min(...allY), yMax = Math.max(...allY);
+  const allX = frame.map(p => p[0]);
+  const xMin = Math.min(...allX), xMax = Math.max(...allX);
+  const span = Math.max(yMax - yMin, xMax - xMin, 1.2);
+  const scale = (h * 0.7) / span;
+  const cx = w / 2, cy = h * 0.52;
+  return frame.map(([x, y, z]) => [cx + x * scale, cy - y * scale]);
+}
+
+function drawFrame(idx) {
+  if (!currentFrames) return;
+  const f = currentFrames[idx];
+  const svg = $("canvas");
+  const w = svg.clientWidth, h = svg.clientHeight;
+  const pts = project(f, w, h);
+  // safe DOM construction (no innerHTML)
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  for (let ci = 0; ci < CHAINS.length; ci++) {
+    const chain = CHAINS[ci];
+    const line = document.createElementNS(SVG_NS, "polyline");
+    line.setAttribute("points", chain.map(j => `${pts[j][0]},${pts[j][1]}`).join(" "));
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", COLORS[ci]);
+    line.setAttribute("stroke-width", "4");
+    line.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(line);
+  }
+  for (let j = 0; j < pts.length; j++) {
+    const c = document.createElementNS(SVG_NS, "circle");
+    c.setAttribute("cx", pts[j][0]);
+    c.setAttribute("cy", pts[j][1]);
+    c.setAttribute("r", "4");
+    c.setAttribute("fill", "#fff8d8");
+    c.setAttribute("stroke", "#000");
+    c.setAttribute("stroke-width", "1");
+    svg.appendChild(c);
+  }
+}
+
+function startLoop() {
+  if (!currentFrames) return;
+  const t0 = performance.now();
+  const loop = (now) => {
+    if (!currentFrames) return;
+    const elapsed = (now - t0) / 1000;
+    frameIdx = Math.floor(elapsed * currentFps) % currentFrames.length;
+    drawFrame(frameIdx);
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+
+$("go").onclick = async () => {
+  const ep = $("endpoint").value;
+  $("ep").textContent = ep;
+  const body = {
+    prompt: $("prompt").value,
+    duration: parseFloat($("duration").value),
+    cfg_scale: parseFloat($("cfg").value),
+    seed: parseInt($("seed").value),
+  };
+  $("status").textContent = "生成中…";
+  $("go").disabled = true;
+  const t0 = performance.now();
+  try {
+    const r = await fetch(ep, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const dt = ((performance.now() - t0) / 1000).toFixed(2);
+    $("status").textContent =
+      `OK · 总耗时 ${dt}s · 推理 ${d.inference_seconds?.toFixed(2)}s · 帧数 ${d.joints.length} @ ${d.fps}fps`;
+    $("raw").textContent = JSON.stringify(d).slice(0, 200) + " ...";
+    currentFrames = d.joints;
+    currentFps = d.fps;
+    frameIdx = 0;
+    startLoop();
+  } catch (e) {
+    $("status").textContent = "FAIL: " + e.message;
+  } finally {
+    $("go").disabled = false;
+  }
+};
+</script>
+</body>
+</html>

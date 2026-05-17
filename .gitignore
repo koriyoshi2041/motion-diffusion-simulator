@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual env
+venv/
+env/
+.venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Project-specific
+baselines/                        # cloned upstream repos (huge)
+ckpts/                            # model weights (24 GB)
+runs/                             # generated outputs (mp4/npy)
+data/                             # downloaded datasets
+node_modules/
+
+# LaTeX build artefacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+
+# Frontend leftovers
+frontend/scraps/
+frontend/screenshots/
+
+# Local config / secrets
+.env
+.env.local
+*.local
+
+# Internal teaching docs / status / scratch (not for public repo)
+docs/
+STATUS.md
+test.txt
+
