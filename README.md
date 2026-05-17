@@ -67,8 +67,9 @@
 <td><img src="assets/ui_demo.png" width="100%"/></td>
 </tr>
 <tr>
-<td><sub>Hand-drawn blueprint aesthetic 来自原模板，我们把中间的 CSS-3D puppet 替换为
-调集群 FastAPI 拿到的真 22-joint SVG 骨架。</sub></td>
+<td><sub>设计图：hand-drawn blueprint 风格的交互界面。
+左边手机输入 prompt → 中间神经管道传输 → 右上 22-joint SVG 真骨架实时播放
+（数据来自集群 HY-Motion 1.0）→ 右下伪终端打日志。</sub></td>
 </tr>
 </table>
 
@@ -238,7 +239,6 @@ LaTeX math, and code listings:
 - **MDM** — Tevet et al. ICLR 2023 ([code](https://github.com/GuyTevet/motion-diffusion-model))
 - **MoMask** — Guo et al. CVPR 2024
 - **HumanML3D** — Guo et al. CVPR 2022 ([dataset](https://github.com/EricGuo5513/HumanML3D))
-- **Frontend skeleton** — `prompt-puppet` hand-drawn template (modified to call real model)
 
 ---
 

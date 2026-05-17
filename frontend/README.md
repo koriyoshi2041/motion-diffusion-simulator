@@ -1,11 +1,9 @@
-# Frontend — prompt → puppet（手绘蓝图风格 demo）
+# Frontend — prompt → puppet
 
-> 这是一个浏览器端的演示界面，调用后端 FastAPI（HY-Motion-1.0-Lite）把
-> 自然语言 prompt 实时转成 22-joint 3D 骨架动画。
+> 设计图：hand-drawn blueprint 风格的浏览器交互界面，调用后端 FastAPI
+> （HY-Motion-1.0-Lite）把自然语言 prompt 实时转成 22-joint 3D 骨架动画。
 >
-> 设计来自原模板 `3dpeoplediffusion.zip`，我们只把中间的 CSS-3D puppet
-> 替换成「调真模型 + SVG 真骨架渲染」，其他手绘元素（手机 / 管道 / 终端 /
-> 注释 / 角标）全部保留。
+> 五个核心组件：手机输入、神经管道、3D 舞台、伪终端、Tweaks 面板。
 
 ## 怎么跑
 
