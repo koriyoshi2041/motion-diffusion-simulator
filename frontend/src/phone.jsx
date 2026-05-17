@@ -40,11 +40,22 @@ function Phone({ value, onChange, activeKey, onSend, status }) {
             <span className="mono" style={{ fontSize: 9, opacity:.6 }}>▮▮▮</span>
           </div>
           <div className="phone-screen-body" ref={screenRef}>
-            <div className="screen-hint mono">/* type a verb. it animates. */</div>
-            <div className="screen-prompt mono">
-              <span className="screen-caret-prefix">&gt;</span>
-              <span>{value}</span>
-              <span className="screen-caret">▍</span>
+            <div className="screen-hint mono">/* 中英文都能输入；回车发送 */</div>
+            <div className="screen-prompt-row">
+              <span className="screen-caret-prefix mono">&gt;</span>
+              <input
+                className="screen-input mono"
+                value={value}
+                placeholder="a person waves hello / 一个人挥手打招呼"
+                onChange={(e) => onChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); onSend && onSend(); }
+                }}
+                autoFocus
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
             </div>
             {status && (
               <div className="screen-status mono">
@@ -95,10 +106,14 @@ function Phone({ value, onChange, activeKey, onSend, status }) {
 
       {/* sticky note overlay */}
       <div className="sticky-note">
-        <div className="handwriting" style={{ fontSize: 18, lineHeight: 1.1 }}>
-          try: <i>"wave"</i>, <i>"jump"</i>,<br/>
-          <i>"dance"</i>, <i>"think"</i>,<br/>
-          <i>"sleep"</i> ...
+        <div className="handwriting" style={{ fontSize: 15, lineHeight: 1.2 }}>
+          英文 try: <i>side flip</i>,<br/>
+          <i>push-ups</i>, <i>jog</i>,<br/>
+          <i>hook punch</i>, <i>ballet</i>,<br/>
+          <i>tai chi</i>, <i>dive</i>...<br/>
+          中文 try: <i>俯卧撑</i>,<br/>
+          <i>侧空翻</i>, <i>太极</i>,<br/>
+          <i>跳舞</i>, <i>出拳</i>...
         </div>
       </div>
 
@@ -176,10 +191,23 @@ function Phone({ value, onChange, activeKey, onSend, status }) {
           line-height: 1.55;
         }
         .screen-hint { color: #6b6450; font-size: 10px; margin-bottom: 8px; }
-        .screen-prompt { font-size: 13px; word-break: break-word; }
-        .screen-caret-prefix { color: var(--blueprint); margin-right: 6px; font-weight: 700; }
-        .screen-caret { animation: blink 1s steps(1) infinite; color: var(--red-pen); }
-        @keyframes blink { 50% { opacity: 0; } }
+        .screen-prompt-row {
+          display: flex; align-items: flex-start; gap: 6px;
+        }
+        .screen-caret-prefix { color: var(--blueprint); font-weight: 700; flex-shrink: 0; }
+        .screen-input {
+          flex: 1;
+          min-width: 0;
+          background: transparent;
+          border: none;
+          outline: none;
+          color: #1d1a14;
+          font-size: 13px;
+          padding: 0;
+          font-family: "JetBrains Mono", monospace;
+          caret-color: var(--red-pen);
+        }
+        .screen-input::placeholder { color: rgba(29,26,20,.35); font-size: 11px; }
         .screen-status {
           margin-top: 10px;
           font-size: 10px;

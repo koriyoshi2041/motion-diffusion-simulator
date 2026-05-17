@@ -14,7 +14,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "pipeStyle": "neural",
   "stageTheme": "dusk",
   "showAnnotations": true,
-  "autoTransmit": true,
+  "autoTransmit": false,
   "termSpeed": 1.0,
   "duration": 4.0,
   "cfg_scale": 5.0
@@ -59,43 +59,24 @@ function App() {
     return () => { window.removeEventListener("resize", measure); obs.disconnect(); clearInterval(id); };
   }, []);
 
-  // Global keystroke -> append to value & flash key
+  // Global keystroke -> flash on-screen key animation only.
+  // 真正的输入由 Phone 里那个原生 <input> 处理，原生支持中文 IME。
   useEffect(() => {
     const onKey = (e) => {
-      // ignore when modifier
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const tag = (e.target && e.target.tagName) || "";
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
       const k = e.key;
-      if (k === "Backspace") { setValue(v => v.slice(0, -1)); flashKey("⌫"); e.preventDefault(); }
-      else if (k === "Enter") { sendNow(); flashKey("↵"); e.preventDefault(); }
-      else if (k === " ") { setValue(v => v + " "); flashKey("␣"); e.preventDefault(); }
-      else if (k.length === 1 && /[a-zA-Z0-9 ?!.,'"]/.test(k)) {
-        setValue(v => v + k);
-        flashKey(k);
-      }
-      // bump pulse on every press for the pipe
-      setPhonePulse(p => p + 1);
+      if (k === "Backspace")     flashKey("⌫");
+      else if (k === "Enter")    flashKey("↵");
+      else if (k === " ")        flashKey("␣");
+      else if (k.length === 1)   flashKey(k);
+      setPhonePulse((p) => p + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Auto-transmit on value change (debounced)
-  useEffect(() => {
-    if (!tweaks.autoTransmit) return;
-    if (!value.trim()) {
-      setAction(window.ACTIONS.idle);
-      return;
-    }
-    setTransmitting(true);
-    if (transmitTimer.current) clearTimeout(transmitTimer.current);
-    transmitTimer.current = setTimeout(() => {
-      sendNow();
-    }, 700);
-    return () => clearTimeout(transmitTimer.current);
-    // eslint-disable-next-line
-  }, [value, tweaks.autoTransmit]);
+  // 只在显式 Enter 时才发送 —— 不再自动 debounce 发送
+  // （Phone 里 <input> 的 onKeyDown 已经会调 onSend）
 
   function flashKey(k) {
     setActiveKey(k.toLowerCase());

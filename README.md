@@ -67,24 +67,29 @@
 
 ---
 
-## 🚀 一键本地跑（不需要 GPU）
+## 🚀 跑起来
+
+前端是本地静态站，后端是常驻 GPU 的 FastAPI（HY-Motion 推理）。
 
 ```bash
 git clone https://github.com/koriyoshi2041/motion-diffusion-simulator
 cd motion-diffusion-simulator
-./run-local.sh
+
+# 1) 启后端（在有 80G 显存 GPU 的机器上，~50s 加载）
+conda activate <torch+cu126 环境>
+CUDA_VISIBLE_DEVICES=0 HY_VARIANT=full \
+  uvicorn server_hy:app --host 0.0.0.0 --port 8888
+
+# 2) 启前端（本机即可）
+cd frontend && python3 -m http.server 7777
 ```
 
-脚本会：
-1. 装 Python 依赖（fastapi / uvicorn / numpy / pydantic）
-2. 启 **mock backend** 在 `:8888`（回放仓库自带的真模型缓存输出，零 GPU）
-3. 启前端在 `:7777`
-4. 自动打开浏览器
+浏览器开 `http://localhost:7777/prompt-puppet.html`，
+默认会向 `actions.jsx` 里配置的 `CLUSTER_ENDPOINT` 发请求（编辑该常量切到自己的服务器）。
+URL 参数 `?api=http://YOUR-HOST:8888/api/generate` 也可覆盖默认。
 
-到浏览器后，敲一句话（"a person performs a side flip"），700ms 后火柴人开始跳。
-在舞台右上角的 4 个 tab 切换不同 viz。
-
-> 想跑真 HY-Motion 而不是 mock？看下面「真模型部署」一节。
+敲一句话回车，火柴人会按生成的 (T, 22, 3) 骨架播放。
+舞台右上 4 个 tab 切骨架 / 热图 / 俯视 / 能量四种 viz。
 
 ---
 
@@ -128,15 +133,14 @@ KL ≈ 20-27 远大于同家族 split-half (7-10) → 跨家族差异远超同�
 ```
 ┌─ 浏览器 ──────────────────────────────────────────────┐
 │  prompt-puppet.html                                  │
-│   ├─ app.jsx       键盘 → 700ms debounce → fetch     │
+│   ├─ app.jsx       Enter → fetch                     │
 │   ├─ actions.jsx   POST /api/generate                │
 │   └─ stage.jsx     22-joint SVG，4 种 viz 切换       │
 └──────────────────────────┬───────────────────────────┘
                            │ HTTP
 ┌──────────────────────────▼───────────────────────────┐
-│  后端二选一                                           │
-│   • mock_server.py   本地无 GPU，回放缓存输出         │
-│   • server_hy.py     生产，HY-Motion-Lite 常驻 GPU   │
+│  server_hy.py        HY-Motion 常驻 GPU              │
+│                      FastAPI · lifespan 预加载       │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -146,9 +150,7 @@ KL ≈ 20-27 远大于同家族 split-half (7-10) → 跨家族差异远超同�
 
 ```
 motion-diffusion-simulator/
-├── server_hy.py             生产后端（HY-Motion 常驻进程）
-├── mock_server.py           本地 mock 后端（回放缓存）
-├── run-local.sh             一键启动
+├── server_hy.py             后端（HY-Motion 常驻进程 · FastAPI）
 ├── src/
 │   ├── metrics.py           ★ KL / JS / W₂ 散度估计器
 │   ├── eval_t2m.py          T2M evaluator 包装（FID / R-Prec）
@@ -169,22 +171,14 @@ motion-diffusion-simulator/
 
 ---
 
-## 🖥️ 真模型部署（可选）
+## 🖥️ 显存需求
 
-mock backend 不需要 GPU，足够看完整 UI。但要真用 HY-Motion 推理，需要 ~22GB 显存
-（Qwen3-8B 16G + CLIP-L 1.6G + HY-Motion-Lite 1.8G + activation）：
+| variant | 参数 | 显存 |
+|---|---:|---:|
+| HY-Motion-1.0-Lite | 0.46B | ~22 GB（Qwen3-8B 16G + CLIP-L 1.6G + Lite 1.8G + activation）|
+| HY-Motion-1.0-Full | 1.0B  | ~30 GB |
 
-```bash
-# 在有 80G 显存 GPU 的机器上
-conda activate <你的 torch+cu126 环境>
-CUDA_VISIBLE_DEVICES=0 HY_VARIANT=lite \
-  uvicorn server_hy:app --host 0.0.0.0 --port 8888
-
-# 然后让浏览器打集群 IP
-http://localhost:7777/prompt-puppet.html?api=http://YOUR-GPU-HOST:8888/api/generate
-```
-
-权重下载方法和依赖修复见 `scripts/01_setup_data.sh`。
+权重下载与依赖修复见 `scripts/01_setup_data.sh`。
 
 ---
 

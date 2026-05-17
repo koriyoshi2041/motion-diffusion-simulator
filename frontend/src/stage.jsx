@@ -86,13 +86,14 @@ function SkeletonSvg({ joints2d, width, height }) {
       viewBox={`0 0 ${width} ${height}`}
       style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
     >
-      {/* 地面投影（在 root 关节 0 下方画椭圆阴影） */}
+      {/* 地面投影（固定在屏幕底部 88% 处，不跟随身体；跳跃时阴影留在地上才合理） */}
       <ellipse
         cx={joints2d[0][0]}
-        cy={joints2d[0][1] + 220}
-        rx={68}
-        ry={10}
-        fill="rgba(29,26,20,.45)"
+        cy={height * 0.88}
+        rx={Math.max(36, Math.min(joints2d.map(p => p[0]).reduce((a,b)=>Math.max(a,b)) -
+                                  joints2d.map(p => p[0]).reduce((a,b)=>Math.min(a,b)), 80))}
+        ry={9}
+        fill="rgba(29,26,20,.35)"
         filter="blur(2px)"
       />
       {polylines}
@@ -311,24 +312,40 @@ function Stage({ action, prompt, transmitting }) {
     return () => window.removeEventListener("resize", m);
   }, []);
 
-  // 投影：让骨架居中 + 适配舞台高度
+  // 投影：scale 用整段动作的固定值（不要每帧重算，否则跳跃会被「锁」到屏幕中央）
+  // origin：x 跟随根关节做水平 follow，y 以「整段动作的地板」为基准；这样跳起来真的能看到。
+  const globalScale = React.useMemo(() => {
+    if (!action?.frames?.length) return 200;
+    // 用整段动作的人体 height（关节 y 极差）做 scale 基准
+    let yMin = Infinity, yMax = -Infinity;
+    for (const f of action.frames) for (const p of f) {
+      if (p[1] < yMin) yMin = p[1];
+      if (p[1] > yMax) yMax = p[1];
+    }
+    const personHeight = Math.max(yMax - yMin, 1.2);
+    // 让人体高度 ~ 屏幕高度 38%（留出上下空间给跳跃/蹲下）
+    return (stageSize.h * 0.38) / personHeight;
+  }, [action, stageSize.h]);
+
+  const groundY = React.useMemo(() => {
+    if (!action?.frames?.length) return 0;
+    // 整段动作里的最低点 → 当作地板高度
+    let yMin = Infinity;
+    for (const f of action.frames) for (const p of f) if (p[1] < yMin) yMin = p[1];
+    return yMin;
+  }, [action]);
+
   const frame = action?.frames?.[frameIdx];
   let joints2d = null;
   if (frame) {
-    // 自动 scale：让最大边对应到舞台高度的 ~60%
-    const allX = frame.map((p) => p[0]);
-    const allY = frame.map((p) => p[1]);
-    const span = Math.max(
-      Math.max(...allX) - Math.min(...allX),
-      Math.max(...allY) - Math.min(...allY)
-    ) || 1.6;
-    const scale = (stageSize.h * 0.55) / span;
-    joints2d = projectFrame(frame, {
-      cx: stageSize.w / 2,
-      cy: stageSize.h * 0.52,
-      scale,
-      zScale: 0.08,
-    });
+    // 当前帧根节点 (idx 0) x 用来水平 follow，避免人飘出屏幕
+    const rootX = frame[0][0];
+    joints2d = frame.map(([x, y, z]) => [
+      stageSize.w / 2 + (x - rootX) * globalScale + z * globalScale * 0.12,
+      // y 翻转：图形坐标 y 向下；以「整段动作的地板」做基准，地板贴近屏幕底部
+      stageSize.h * 0.88 - (y - groundY) * globalScale,
+      z,
+    ]);
   }
 
   // 4 种 viz tab 数据

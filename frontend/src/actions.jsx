@@ -34,21 +34,19 @@ const SMPL22_KINEMATIC_CHAIN = [
 
 
 // ──────────────────────────────────────────────────────────────────────
-// 默认 server endpoint
-//   优先级：URL ?api=... > window.HY_API > 本机 mock backend > 集群
+// 默认 server endpoint —— 直接打集群（aTrust VPN 走通后浏览器可直连）
+//   优先级：URL ?api=... > window.HY_API > 集群 172.16.1.48:8888
+//   想用本机 mock 时显式 ?api=http://localhost:8888/api/generate
 // ──────────────────────────────────────────────────────────────────────
+const CLUSTER_ENDPOINT = "http://172.16.1.48:8888/api/generate";
+
 function _resolveEndpoint() {
   try {
     const urlApi = new URLSearchParams(window.location.search).get("api");
     if (urlApi) return urlApi;
   } catch (e) {}
   if (window.HY_API) return window.HY_API;
-  // local mock 优先 → 同主机 8888；若访问 file:// 也回退到 localhost
-  const host = window.location.hostname || "localhost";
-  if (host === "localhost" || host === "127.0.0.1" || host === "") {
-    return "http://localhost:8888/api/generate";
-  }
-  return `http://${host}:8888/api/generate`;
+  return CLUSTER_ENDPOINT;
 }
 const DEFAULT_ENDPOINT = _resolveEndpoint();
 
