@@ -35,10 +35,9 @@ const SMPL22_KINEMATIC_CHAIN = [
 
 // ──────────────────────────────────────────────────────────────────────
 // 默认 server endpoint —— 直接打集群（aTrust VPN 走通后浏览器可直连）
-//   优先级：URL ?api=... > window.HY_API > 集群 172.16.1.48:8889 (Full)
-//   :8889 = HY-Motion-1.0 Full (1B)；:8888 = HY-Motion-1.0-Lite (0.46B)
+//   优先级：URL ?api=... > window.HY_API > 集群 172.16.1.35:8889 (Full)
 // ──────────────────────────────────────────────────────────────────────
-const CLUSTER_ENDPOINT = "http://172.16.1.48:8889/api/generate";
+const CLUSTER_ENDPOINT = "http://172.16.1.39:8889/api/generate";
 
 function _resolveEndpoint() {
   try {

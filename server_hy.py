@@ -110,7 +110,19 @@ class _HYRuntime:
             k3d = out["keypoints3d"]
             if hasattr(k3d, "cpu"):
                 k3d = k3d.cpu().numpy()
-            j = k3d[0, ..., :22, :].astype(np.float32)        # (L, 22, 3)
+            j = k3d[0, ..., :22, :].astype(np.float32)        # (L, 22, 3) root-relative
+
+            # HY-Motion body_model.forward 只把 trans 加到 vertices，没加到 keypoints3d
+            # 所以 root 永远停在 (0, -0.09, 0)，跳/走/蹲都看不见 —— 手动把 transl 加回去
+            transl = out.get("transl") if isinstance(out, dict) else None
+            if transl is not None:
+                if hasattr(transl, "cpu"):
+                    transl = transl.cpu().numpy()
+                t = np.asarray(transl, dtype=np.float32)
+                if t.ndim == 3:        # (B, L, 3) -> (L, 3)
+                    t = t[0]
+                if t.shape[0] == j.shape[0] and t.shape[-1] == 3:
+                    j = j + t[:, None, :]     # 每帧每关节加上 root 位移
             return j, time.time() - t0
 
 
